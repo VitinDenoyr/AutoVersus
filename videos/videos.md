@@ -1,0 +1,2 @@
+# Instruções
+Essa pasta deve existir e conterá os vídeos gerados pelo programa. Os vídeos serão gerados com um padrão de nome "edit_k.mp4", onde k é um inteiro positivo correspondente a quantos arquivos existem nessa pasta até o momento. Se quiser salvar um arquivo sem risco de sobrescrição, apenas renomeie ele para um nome em outro formato
