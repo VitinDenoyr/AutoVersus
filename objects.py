@@ -73,6 +73,20 @@ class Characters:
 				17000,9550,8775,30000
        		]
 		]
+  
+	def Ragna(self):
+		return [
+			TYPE_GIF,
+			"ragna.gif",
+			"win_ragna.gif",
+			"Ragna",
+			STAT_COMBAT,
+			[
+    			417800,33560,121000,90900,133566,
+				21175,7444,11030,45253,26012,
+				19303,15,43775,57000
+       		]
+		]
 
 class AudioCollection:
 	def WeLive(self):
@@ -109,7 +123,30 @@ class AudioCollection:
 				Timestamp('00:00:19.31'),
 				Timestamp('00:00:19.80'),
 				Timestamp('00:00:20.29'),
-				Timestamp('00:00:21.30',(Timestamp('00:00:22.65') - Timestamp('00:00:21.30'))),
+				Timestamp('00:00:21.30',(Timestamp('00:00:22.50') - Timestamp('00:00:21.30'))),
+			],
+			True
+		)
+
+	def DontLike(self):
+		return Audio(
+			os.path.join(audiosPath,"KanyeWestDontLike.mp3"),
+			[
+				Timestamp('00:00:00.00'),
+				Timestamp('00:00:04.35'),
+				Timestamp('00:00:05.33'),
+				Timestamp('00:00:06.59'),
+				Timestamp('00:00:07.69'),
+				Timestamp('00:00:08.70'),
+				Timestamp('00:00:09.70'),
+				Timestamp('00:00:10.70'),
+				Timestamp('00:00:11.85'),
+				Timestamp('00:00:12.88'),
+				Timestamp('00:00:13.90'),
+				Timestamp('00:00:14.97'),
+				Timestamp('00:00:16.04'),
+				Timestamp('00:00:17.10'),
+				Timestamp('00:00:21.26',(Timestamp('00:00:25.05') - Timestamp('00:00:21.26'))),
 			],
 			True
 		)

@@ -6,20 +6,25 @@ import subprocess
 import random
 import os
 
-#Constantes
+#Constantes: Ao atualizar transições, mude os limites da função randomTransition
 TYPE_IMAGE = 0; TYPE_GIF = 1
 
 STAT_COMBAT = 0; STAT_INTELLECT = 1
 
-FRAME_COUNT = 60; FRAME_DURATION = 1/FRAME_COUNT
+FRAME_COUNT = 60; FRAME_DURATION = 1/FRAME_COUNT; FRAME_60DURATION = 1/60
 
 SCENE_INITIAL = 0; SCENE_NORMAL = 1; SCENE_FINAL = 2
 
-TRANSITION_NONE = 0; TRANSITION_FADE = 1; TRANSITION_ZOOM_IN = 2; TRANSITION_ZOOM_OUT = 4; TRANSITION_ROTATE = 8
+TRANSITION_NONE = 0; TRANSITION_FADE = 1; TRANSITION_RANDOM = -1
+TRANSITION_ZOOM_IN = 2; TRANSITION_ZOOM_OUT = 4
+TRANSITION_ROTATE_L = 8; TRANSITION_ROTATE_R = 16; TRANSITION_ROTATIONS = 24
+TRANSITION_SLIDE_L = 32; TRANSITION_SLIDE_U = 64; TRANSITION_SLIDE_R = 128; TRANSITION_SLIDE_D = 256; TRANSITION_SLIDES = 480
 
-ZOOMSTAGE_START = 0; ZOOMSTAGE_END = 1
+FXSTAGE_START = 0; FXSTAGE_END = 1
 
-ROTATESTAGE_START = 0; ROTATESTAGE_END = 1
+#Mapas
+convertR = {TRANSITION_ROTATE_L: 1, TRANSITION_ROTATE_R: -1}
+convertS = {TRANSITION_SLIDE_L: 0, TRANSITION_SLIDE_U: 1, TRANSITION_SLIDE_R: 2, TRANSITION_SLIDE_D: 3}
 
 #Diretórios
 imagesPath = os.path.join(os.getcwd(), 'images')
@@ -31,6 +36,42 @@ textPath = os.path.join(os.getcwd(), 'texts')
 #--------------------------------------------------------------------------------------------------
 
 #Funções úteis
+
+#Escolhe um número aleatório que representa uma transição aleatória
+def randomTransition():
+	ans = random.randint(0,999)
+	''' Distribuição de probabilidade
+		None = 2%            Fade = 8%
+		ZoomIn = 8%          ZoomOut = 10% 
+		RotateL = 10.5%      RotateR = 10.5%
+		SlideL = 10%         SlideR = 10%
+		SLideU = 6.5%        SlideD = 6.5%
+		RotL_Zout = 9%       RotR_Zout = 9%
+	'''
+	if ans in range(0,20):
+		return TRANSITION_NONE
+	elif ans in range(20,100):
+		return TRANSITION_FADE
+	elif ans in range(100,180):
+		return TRANSITION_ZOOM_IN
+	elif ans in range(180,280):
+		return TRANSITION_ZOOM_OUT
+	elif ans in range(280,385):
+		return TRANSITION_ROTATE_L
+	elif ans in range(385,490):
+		return TRANSITION_ROTATE_R
+	elif ans in range(490,590):
+		return TRANSITION_SLIDE_L
+	elif ans in range(590,690):
+		return TRANSITION_SLIDE_R
+	elif ans in range(690,755):
+		return TRANSITION_SLIDE_U
+	elif ans in range(755,820):
+		return TRANSITION_SLIDE_D
+	elif ans in range(820,910):
+		return TRANSITION_ROTATE_L + TRANSITION_ZOOM_OUT
+	elif ans in range(910,1000):
+		return TRANSITION_ROTATE_R + TRANSITION_ZOOM_OUT
 
 #Dado um frame, amplia ele em k vezes
 def frame_zoomIn(frame, factor:float):
@@ -90,10 +131,33 @@ def frame_rotate(frame, angle:float):
 	baseframe[ny0:ny0+rh,nx0:nx0+rw] = scaleframe[:dimy,:dimx]
 	return baseframe
 
+def frame_slide(frame, nextFrame, direction, progress):
+	h,w = frame.shape[:2]
+	baseframe = NP.zeros_like(frame)
+
+	if direction%2 == 1: #Vertical
+		nh = int(progress*h)
+		if direction == 3: #Up
+			baseframe[h-nh:h,:w] = nextFrame[:nh,:w]
+			baseframe[:h-nh,:w] = frame[nh:h,:w]
+		elif direction == 1: #Down
+			baseframe[:nh,:w] = nextFrame[h-nh:h,:w]
+			baseframe[nh:h,:w] = frame[:h-nh,:w]
+	else: #Horizontal
+		nw = int(progress*w)
+		if direction == 2: #Left
+			baseframe[:h,w-nw:w] = nextFrame[:h,:nw]
+			baseframe[:h,:w-nw] = frame[:h,nw:w]
+		elif direction == 0: #Right
+			baseframe[:h,:nw] = nextFrame[:h,w-nw:w]
+			baseframe[:h,nw:w] = frame[:h,:w-nw]
+
+	return baseframe
+
 #Efeitos customizados
 
 def fx_zoom(get_frame, t, currentSceneDuration, zoomDuration, zoomFactor, zoomType):
-	if zoomType == ZOOMSTAGE_END:
+	if zoomType == FXSTAGE_END:
 		additionalTime = currentSceneDuration - zoomDuration
 		if t - additionalTime < 0:
 			return get_frame(t)
@@ -101,7 +165,7 @@ def fx_zoom(get_frame, t, currentSceneDuration, zoomDuration, zoomFactor, zoomTy
 			return frame_zoomIn(get_frame(t),(1 + zoomFactor)**round(max(t - additionalTime,0)*FRAME_COUNT))
 		else:
 			return frame_zoomOut(get_frame(t),(1 + zoomFactor)**round(max(t - additionalTime,0)*FRAME_COUNT))
-	elif zoomType == ZOOMSTAGE_START:
+	elif zoomType == FXSTAGE_START:
 		if t > zoomDuration:
 			return get_frame(t)
 		if zoomFactor > 0:
@@ -109,17 +173,22 @@ def fx_zoom(get_frame, t, currentSceneDuration, zoomDuration, zoomFactor, zoomTy
 		else:
 			return frame_zoomOut(get_frame(t),(1 + zoomFactor)**round((zoomDuration - t)*FRAME_COUNT))
 
-def fx_rotate(get_frame, t, currentSceneDuration, rotationDuration, rotateType):
-	if rotateType == ROTATESTAGE_END:
+def fx_rotate(get_frame, t, currentSceneDuration, rotationDuration, rotateType, direction):
+	if rotateType == FXSTAGE_END:
 		additionalTime = currentSceneDuration - rotationDuration
 		if t - additionalTime < 0:
 			return get_frame(t)
-		return frame_rotate(get_frame(t),90*((t - additionalTime)/rotationDuration))
-	elif rotateType == ROTATESTAGE_START:
+		return frame_rotate(get_frame(t),direction*90*((t - additionalTime)/rotationDuration))
+	elif rotateType == FXSTAGE_START:
 		if t > rotationDuration:
 			return get_frame(t)
-		return frame_rotate(get_frame(t),270 + 90*(t/rotationDuration))
+		return frame_rotate(get_frame(t),direction*(270 + 90*(t/rotationDuration)))
 
+def fx_slide(get_frame, t, currentSceneDuration, slideDuration, direction, nextFrame):
+	additionalTime = currentSceneDuration - slideDuration
+	if t - additionalTime < 0:
+		return get_frame(t)
+	return frame_slide(get_frame(t),nextFrame,direction,max(0,min(100,(t - additionalTime)/(slideDuration))))
 
 #--------------------------------------------------------------------------------------------------
 
@@ -312,6 +381,7 @@ Classe Scene:
 	- Conjunto das imagens/gifs e textos que compõem uma tela
 	set_duration() -> Altera a duração dos componentes da tela
 	compose() -> Retorna um composite video clip com todos os elementos unidos
+	applytransition() -> Aplica uma transição a uma cena
 '''
 class Scene:
 	def __init__(self, sceneType):
@@ -326,7 +396,7 @@ class Scene:
 		for i in range(len(self.texts)):
 			self.texts[i] = self.texts[i].set_duration(duration)
 
-	def compose(self):
+	def compose(self, nextFrame = None, prevTransition = TRANSITION_NONE, generatedTransition = TRANSITION_NONE):
 		selectedObjects = []
 		for el in self.elements:
 			selectedObjects.append(el)
@@ -335,38 +405,78 @@ class Scene:
 		res = MED.CompositeVideoClip(selectedObjects, size=(1080,1920))
 		global currentSceneDuration
 		currentSceneDuration = self.elements[0].duration
+ 
+		if self.transitionApplied == TRANSITION_RANDOM:
+			self.transitionApplied = generatedTransition
+   
+			if (prevTransition & TRANSITION_FADE) and self.type != SCENE_INITIAL:
+				res = res.fadein(9*FRAME_60DURATION)
+			if (self.transitionApplied & TRANSITION_FADE) and self.type != SCENE_FINAL:
+				res = res.fadeout(9*FRAME_60DURATION)
+
+			if (prevTransition & TRANSITION_ZOOM_IN) and self.type != SCENE_INITIAL:
+				res = res.fl(lambda f,t: fx_zoom(f,t,self.elements[0].duration, 5*FRAME_60DURATION,
+				0.38, FXSTAGE_START))
+			if (self.transitionApplied & TRANSITION_ZOOM_IN) and self.type != SCENE_FINAL:
+				res = res.fl(lambda f,t: fx_zoom(f,t,self.elements[0].duration, 5*FRAME_60DURATION,
+				0.38, FXSTAGE_END))
+
+			if (prevTransition & TRANSITION_ZOOM_OUT) and self.type != SCENE_INITIAL:
+				res = res.fl(lambda f,t: fx_zoom(f,t,self.elements[0].duration, 4*FRAME_60DURATION,
+				-0.38, FXSTAGE_START))
+			if (self.transitionApplied & TRANSITION_ZOOM_OUT) and self.type != SCENE_FINAL:
+				res = res.fl(lambda f,t: fx_zoom(f,t,self.elements[0].duration, 4*FRAME_60DURATION,
+				-0.38, FXSTAGE_END))
 		
-		if (self.transitionApplied & TRANSITION_FADE):
-			if self.type != SCENE_INITIAL:
-				res = res.fadein(9*FRAME_DURATION)
-			if self.type != SCENE_FINAL:
-				res = res.fadeout(9*FRAME_DURATION)
+			if (prevTransition & TRANSITION_ROTATIONS) != 0 and (self.type != SCENE_INITIAL):
+				res = res.fl(lambda f,t: fx_rotate(f,t,self.elements[0].duration,5*FRAME_60DURATION,
+				FXSTAGE_START,convertR[prevTransition & TRANSITION_ROTATIONS]))
+			if (self.transitionApplied & TRANSITION_ROTATIONS) != 0 and (self.type != SCENE_FINAL):
+				res = res.fl(lambda f,t: fx_rotate(f,t,self.elements[0].duration,5*FRAME_60DURATION,
+				FXSTAGE_END,convertR[self.transitionApplied & TRANSITION_ROTATIONS]))
+		
+			
+			if (self.transitionApplied & TRANSITION_SLIDES) != 0 and (self.type != SCENE_FINAL):
+				res = res.fl(lambda f,t: fx_slide(f,t,self.elements[0].duration,7*FRAME_60DURATION,convertS[self.transitionApplied & TRANSITION_SLIDES],nextFrame))
+	
+		else:
+			if (self.transitionApplied & TRANSITION_FADE):
+				if self.type != SCENE_INITIAL:
+					res = res.fadein(9*FRAME_60DURATION)
+				if self.type != SCENE_FINAL:
+					res = res.fadeout(9*FRAME_60DURATION)
 
-		if (self.transitionApplied & TRANSITION_ZOOM_IN):
-			if self.type != SCENE_INITIAL:
-				res = res.fl(lambda f,t: fx_zoom(f,t,self.elements[0].duration, 5*FRAME_DURATION,
-				0.38, ZOOMSTAGE_START))
-			if self.type != SCENE_FINAL:
-				res = res.fl(lambda f,t: fx_zoom(f,t,self.elements[0].duration, 5*FRAME_DURATION,
-				0.38, ZOOMSTAGE_END))
+			if (self.transitionApplied & TRANSITION_ZOOM_IN):
+				if self.type != SCENE_INITIAL:
+					res = res.fl(lambda f,t: fx_zoom(f,t,self.elements[0].duration, 5*FRAME_60DURATION,
+					0.38, FXSTAGE_START))
+				if self.type != SCENE_FINAL:
+					res = res.fl(lambda f,t: fx_zoom(f,t,self.elements[0].duration, 5*FRAME_60DURATION,
+					0.38, FXSTAGE_END))
 
-		if (self.transitionApplied & TRANSITION_ZOOM_OUT):
-			if self.type != SCENE_INITIAL:
-				res = res.fl(lambda f,t: fx_zoom(f,t,self.elements[0].duration, 4*FRAME_DURATION,
-				-0.38, ZOOMSTAGE_START))
-			if self.type != SCENE_FINAL:
-				res = res.fl(lambda f,t: fx_zoom(f,t,self.elements[0].duration, 4*FRAME_DURATION,
-				-0.38, ZOOMSTAGE_END))
-    
-		if (self.transitionApplied & TRANSITION_ROTATE):
-			if self.type != SCENE_INITIAL:
-				res = res.fl(lambda f,t: fx_rotate(f,t,self.elements[0].duration,5*FRAME_DURATION,
-                ROTATESTAGE_START))
-			if self.type != SCENE_FINAL:
-				res = res.fl(lambda f,t: fx_rotate(f,t,self.elements[0].duration,5*FRAME_DURATION,
-                ROTATESTAGE_END))
+			if (self.transitionApplied & TRANSITION_ZOOM_OUT):
+				if self.type != SCENE_INITIAL:
+					res = res.fl(lambda f,t: fx_zoom(f,t,self.elements[0].duration, 4*FRAME_60DURATION,
+					-0.38, FXSTAGE_START))
+				if self.type != SCENE_FINAL:
+					res = res.fl(lambda f,t: fx_zoom(f,t,self.elements[0].duration, 4*FRAME_60DURATION,
+					-0.38, FXSTAGE_END))
+		
+			if (self.transitionApplied & TRANSITION_ROTATIONS) != 0:
+				convert = {TRANSITION_ROTATE_L: 1, TRANSITION_ROTATE_R: -1}
+				if self.type != SCENE_INITIAL:
+					res = res.fl(lambda f,t: fx_rotate(f,t,self.elements[0].duration,5*FRAME_60DURATION,
+					FXSTAGE_START,convert[self.transitionApplied & TRANSITION_ROTATIONS]))
+				if self.type != SCENE_FINAL:
+					res = res.fl(lambda f,t: fx_rotate(f,t,self.elements[0].duration,5*FRAME_60DURATION,
+					FXSTAGE_END,convert[self.transitionApplied & TRANSITION_ROTATIONS]))
+		
+			if (self.transitionApplied & TRANSITION_SLIDES) != 0:
+				convert = {TRANSITION_SLIDE_L: 0, TRANSITION_SLIDE_U: 1, TRANSITION_SLIDE_R: 2, TRANSITION_SLIDE_D: 3}
+				if self.type != SCENE_FINAL:
+					res = res.fl(lambda f,t: fx_slide(f,t,self.elements[0].duration,7*FRAME_60DURATION,convert[self.transitionApplied & TRANSITION_SLIDES],nextFrame))
 
-		return res
+		return res, self.transitionApplied
 
 	def applyTransition(self, type):
 		self.transitionApplied += type * (1 - (self.transitionApplied & type))
@@ -411,7 +521,7 @@ class Victory(Scene):
 		if element[1] == TYPE_IMAGE: #É imagem
 			self.elements = [MED.ImageClip(os.path.join(imagesPath,f"{element[0]}")).set_position((0,0)).resize(newsize=(1080,1920))]
 		else: #É gif
-			self.elements = [MED.VideoFileClip(os.path.join(gifsPath,f"{element[0]}")).set_position((0,0)).resize(newsize=(1080,1920))]
+			self.elements = [MED.VideoFileClip(os.path.join(gifsPath,f"{element[0]}")).set_position((0,0)).resize(newsize=(1080,1920)).loop()]
 
 '''
 Classe FullVideo
@@ -426,7 +536,7 @@ class FullVideo:
 		self.char2 = char2
 		self.audio = audio
 		self.transition = transition
-		self.videoName = f'edit_{len(os.listdir(outputPath))+1}.mp4'
+		self.videoName = f'edit_{len(os.listdir(outputPath))}.mp4'
 		self.makeScenes()
 		self.updateScenes()
   
@@ -491,8 +601,17 @@ class FullVideo:
    
 	def createVideo(self):
 		compositions = []
-		for sc in self.scenes:
-			compositions.append(sc.compose())
+		nextFrame = None
+		transitionUsed = TRANSITION_NONE
+		for sc in reversed(self.scenes):
+			newTransition = randomTransition() #Usada apenas se transitionApplied é TRANSITION_RANDOM
+			compositeRes, transitionUsed = sc.compose(nextFrame,newTransition,transitionUsed)
+			compositions.append(compositeRes)
+   
+			nextFrame = compositions[-1].get_frame(0)
+			transitionUsed = newTransition
+
+		compositions = list(reversed(compositions))
 		resClip = MED.concatenate_videoclips(compositions).set_audio(self.audio.cut(0,len(compositions)))
 
 		for tx in os.listdir(textPath): #Limpar pasta texts
